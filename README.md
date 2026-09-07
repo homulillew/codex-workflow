@@ -1,84 +1,82 @@
 # codex-workflow
 
-一个可跨项目复用的 Codex 多模型编排工作流。目标不是“尽量少调用模型”，而是在**不牺牲必要的分析、验证和 review 的前提下，把昂贵模型只用在高杠杆环节**。
+可跨项目复用的 Codex 多模型编排与 ML Research 工作流。目标不是“尽量少调用模型”，而是在**不牺牲分析、验证和 review 的前提下，提升每单位模型额度与 GPU compute 的有效产出**。
 
-现在包含两层可组合工作流：
+当前包含两层可组合 Skill：
 
-- `dev-orchestrator`：软件开发生命周期，负责 evidence -> plan -> implement -> deterministic validation -> review/escalation；
-- `ml-research-orchestrator`：正式 ML 研究生命周期，负责 hypothesis -> registered experiment -> smoke/pilot/full -> analysis -> bad cases -> decision -> claim evidence。
+- `dev-orchestrator`：`evidence -> plan -> implement -> deterministic validation -> review/escalation`
+- `ml-research-orchestrator`：`hypothesis -> registered experiment -> smoke/pilot/full -> analysis -> bad cases -> decision -> claim evidence`
 
-两者不会重复规划：研究 Skill 决定“实验要证明什么”，需要改代码时把一个有验收标准的窄任务交给开发 Skill，代码验证通过后再回到实验生命周期。
+研究 Skill 决定“实验要证明什么”；需要改代码时，把一个边界明确、带验收标准的实现任务交给开发 Skill，验证完成后再回到研究生命周期。
 
 ## 核心原则
 
-- 默认用均衡模型处理日常任务；
-- 用便宜模型做 repo 搜索、证据收集和重复工作；
+- 便宜模型做 repo 搜索、证据收集和重复工作；
 - 复杂规划和非平凡 review 才升级到更强模型；
-- GPT-6 Astra 只处理真正困难/高风险的窄问题；
-- 测试、编译、类型检查、lint 等确定性工具优先于“让更贵模型想一遍”；
+- 确定性测试优先于“再让模型想一遍”；
 - 越昂贵的 agent，收到的上下文越小、越高信号；
-- GitHub 网页分析与本地 Codex 执行通过标准 `Execution Packet` 交接，避免重复分析仓库；
-- 正式 ML 实验先冻结问题/假设/指标，再逐级放大 compute；
-- 训练完成不等于研究完成：Bad Case、Training Report、Decision 和 Claim Evidence 都属于实验产物。
+- GitHub/web 与本地 Codex 使用 `Execution Packet v1` 交接，避免重复扫描仓库；
+- 正式 ML 实验先冻结 hypothesis / baseline / metrics，再逐级放大 compute；
+- 训练跑完不等于研究完成：Training Report、Bad Case、Decision、Claim Evidence 都是一等产物；
+- 下游项目 vendor 固定 workflow 快照，不动态跟随 `main`；
+- upstream upgrade 必须显式、可审计，并保护 project-owned 文件。
 
 ## 默认角色映射
 
-模型与工作流逻辑解耦。流程只引用角色；具体模型只配置在 `.codex/agents/*.toml`。
+工作流只引用角色；模型绑定集中在 `.codex/agents/*.toml`。
 
-| 角色 | 默认模型 | 用途 |
-| --- | --- | --- |
-| primary | GPT-5.6 Terra / medium | 默认路由、普通本地任务 |
-| explorer | GPT-5.6 Luna / low | repo 搜索、证据收集 |
-| worker | GPT-5.6 Terra / medium | 日常实现 |
-| planner | GPT-5.6 Sol / medium | 复杂/跨模块规划 |
-| reviewer | GPT-5.6 Sol / medium | 非平凡 review、debug/research audit escalation |
-| expert | GPT-6 Astra / medium | 关键疑难决策，默认只读 |
-
-模型经济性或可用性变化时，只需调整 TOML，不需要修改 Skill 或 handoff 协议。
+| 角色 | 默认用途 |
+| --- | --- |
+| `primary` | 默认路由、普通本地任务 |
+| `explorer` | 低成本 repo 搜索与证据收集 |
+| `worker` | 有边界的实现任务 |
+| `planner` | 跨模块/高价值规划 |
+| `reviewer` | 非平凡 review、debug/research audit |
+| `expert` | 真正困难/关键决策的窄问题升级 |
 
 ## 软件开发入口
 
-### A. Local-first
+### Local-first
 
 ```text
 需求
   -> $dev-orchestrator
   -> 风险分级
-  -> 必要的 repo 探索
-  -> 必要的规划
-  -> 实现
+  -> evidence
+  -> 必要时 plan
+  -> implement
   -> tests/build/type/lint
-  -> 按风险 review / escalation
+  -> proportional review / escalation
 ```
 
-### B. GitHub-first
+### GitHub-first
 
 ```text
-push exact commit to GitHub
-        |
-        v
+push exact commit
+        ↓
 ChatGPT/web 分析 repo/ref/commit
-        |
-        v
+        ↓
 Execution Packet v1
-        |
-        v
-复制到本地 Codex
-        |
-        v
-检查本地 HEAD / packet 是否漂移
-        |
-        v
-执行同一个 dev-orchestrator workflow
+        ↓
+本地 Codex drift check
+        ↓
+$dev-orchestrator
+        ↓
+implement + deterministic validation
 ```
 
-网页端与本地端的关键交接物不是长篇分析，而是紧凑的 `Execution Packet v1`：目标、证据路径/符号、约束、风险、实施步骤、验收标准和验证命令。
+GitHub-first prompt：
+
+- `prompts/github-analyze.md`
+- `prompts/codex-execute.md`
+
+Execution Packet 规范：
+
+- `.agents/skills/dev-orchestrator/references/execution-packet.md`
 
 ## ML Research 工作流
 
-`ml-research-orchestrator` 面向真正会产出技术结论的训练/评测任务，而不是“能跑就算完成”。
-
-默认状态机：
+正式研究实验使用：
 
 ```text
 Research Question
@@ -102,7 +100,7 @@ Research Question
 - success/failure/stop criteria；
 - leakage / reward-hacking / confounder 风险。
 
-正式实验结束不能只有一个最终分数。默认要求：
+推荐实验产物：
 
 ```text
 experiments/EXP-XXX/
@@ -117,56 +115,134 @@ experiments/EXP-XXX/
     decision.md
 ```
 
-其中：
+重点协议：
 
-- `training_report.md` 分析优化过程、异常时间段、reward/entropy/KL/clip/grad/action 等训练健康信号；
-- `bad_case_report.md` 强制做失败 taxonomy、代表样本、reward/metric decomposition、退化策略审计和下一诊断；
-- `decision.md` 只能给 `ACCEPT / REJECT / INCONCLUSIVE / FOLLOW_UP`，并区分 measured fact、interpretation 和 alternative explanation；
-- `reports/claim_evidence.md` 把简历/面试/报告中的每个数字一路追到 experiment、result、config、commit、data/model/evaluator provenance；
-- `reports/interview/` 在项目过程中持续沉淀“为什么这么做、实际遇到什么问题、怎么验证、还存在哪些限制”。
+- Experiment Contract：`.agents/skills/ml-research-orchestrator/references/experiment-contract.md`
+- Lifecycle：`.agents/skills/ml-research-orchestrator/references/experiment-lifecycle.md`
+- Reporting：`.agents/skills/ml-research-orchestrator/references/reporting-protocol.md`
+- Research Debug Packet：`.agents/skills/ml-research-orchestrator/references/research-debug-packet.md`
+- Claim Evidence：`.agents/skills/ml-research-orchestrator/references/claim-evidence.md`
+- Interview Evidence：`.agents/skills/ml-research-orchestrator/references/interview-report.md`
+- GitHub independent audit：`prompts/github-research-audit.md`
 
-详细设计见 [`docs/ml-research-workflow.md`](docs/ml-research-workflow.md)。
+## 安装
 
-## 风险路由（开发任务）
-
-| 等级 | 典型任务 | 默认路径 |
-| --- | --- | --- |
-| R0 trivial | 文本/配置小改、机械修改 | primary 直接处理 + 确定性验证 |
-| R1 standard | 普通 feature/bug/refactor/API/UI | explorer（按需） -> worker -> 验证；reviewer 按风险 |
-| R2 complex | 跨模块、公开接口、数据模型、复杂根因 | explorer -> planner -> worker -> 验证 -> reviewer |
-| R3 critical | auth/security/payment/破坏性 migration/concurrency/data loss | evidence -> planner -> expert（窄问题） -> worker -> 验证 -> reviewer |
-
-worker 对同一未解决根因最多进行两次有意义的尝试；之后停止盲目 retry，先形成 Debug Packet 交给 reviewer，仍无法解决才升级 expert。ML 研究失败采用同样原则，但使用 `Research Debug Packet v1`。
-
-## 安装到项目
-
-### Core：普通软件项目
+### Core
 
 ```bash
-bash scripts/install.sh /path/to/your-project
+bash scripts/install.sh /path/to/project
 ```
 
 安装：
 
-- `.codex/agents/*.toml`；
-- `.agents/skills/dev-orchestrator/`；
-- Codex config/example；
-- `AGENTS.md` workflow policy；
-- 当安装源是 Git checkout 时写入 `.codex-workflow.lock`，记录 workflow commit/profile。
+- `.codex/agents/*.toml`
+- `.agents/skills/dev-orchestrator/**`
+- workflow-managed `AGENTS.md` block
+- `.codex/codex-workflow.config.example.toml`
+- 当项目缺少 `.codex/config.toml` 时创建初始 config
+- `.codex-workflow.lock`
+- `.codex-workflow.manifest`
 
-### ML Research：训练/研究项目
+### ML Research
 
 ```bash
-bash scripts/install.sh /path/to/your-project --profile ml-research
+bash scripts/install.sh /path/to/project --profile ml-research
 ```
 
-在 Core 基础上额外安装：
+额外安装：
 
-- `.agents/skills/ml-research-orchestrator/`；
-- ML research policy；
-- workflow lock 中记录 `ml-research` profile。
+- `.agents/skills/ml-research-orchestrator/**`
+- ML research `AGENTS.md` managed block
 
-本地 Codex：
+项目自己的模型、数据集、reward、action space、安全阈值、GPU 约束，应放在目标项目自己的 repo-local project Skill，而不是写进 `codex-workflow`。
+
+## 上游/下游关系
+
+推荐关系：
+
+```text
+codex-workflow
+  reusable upstream
+        │
+        │ exact reviewed commit
+        ▼
+ install / explicit upgrade
+        ▼
+target project
+  vendored workflow snapshot
+  + project-local Skill
+  + code / experiments / evidence / reports
+```
+
+**不要让目标项目动态跟随 `codex-workflow/main`。**
+
+目标项目应提交：
+
+- vendored workflow-owned files；
+- `.codex-workflow.lock`；
+- `.codex-workflow.manifest`。
+
+其中 commit 是真正的 reproducibility anchor。
+
+## 安全升级
+
+当前 workflow 支持显式升级：
+
+```bash
+bash scripts/update.sh /path/to/project
+```
+
+等价于：
+
+```bash
+bash scripts/install.sh /path/to/project --upgrade
+```
+
+升级规则：
+
+- 未显式提供 `--profile` 时保留目标项目已有 profile；
+- 支持 `core -> ml-research` promotion；
+- 自动 `ml-research -> core` downgrade 被拒绝；
+- workflow-owned 文件根据 `.codex-workflow.manifest` 做 SHA-256 divergence 检查；
+- 本地修改过的 managed file 会阻止升级；
+- `.codex/config.toml`、project Skill、docs、experiments、reports 等 project-owned 内容不会被覆盖；
+- `AGENTS.md` 只更新 codex-workflow marker 内的 managed block；
+- upstream 删除的 managed file 只有在下游未修改时才会安全删除；
+- 旧 lock v1 可根据记录的 `workflow_commit` 与 Git history 迁移到 lock v2。
+
+如果确定本地 managed 修改可以丢弃：
+
+```bash
+bash scripts/update.sh /path/to/project --force-managed
+```
+
+默认禁止从 dirty upstream checkout 安装/升级。仅测试场景可以显式：
+
+```bash
+bash scripts/update.sh /path/to/project --allow-dirty-source
+```
+
+详细协议：
+
+- [`docs/versioning-and-upgrades.md`](docs/versioning-and-upgrades.md)
+
+## Lock v2
+
+示例：
+
+```yaml
+lock_version: 2
+workflow_repository: "https://github.com/example/codex-workflow.git"
+workflow_version: "0.3.0"
+workflow_commit: "<exact-commit>"
+profile: "ml-research"
+source_dirty: false
+managed_manifest: ".codex-workflow.manifest"
+```
+
+`.codex-workflow.manifest` 记录 workflow-owned 文件和安装时 SHA-256。它用于区分“安全 upstream update”和“下游本地 divergence”。
+
+## 本地 Codex
 
 ```text
 $dev-orchestrator
@@ -176,78 +252,41 @@ $ml-research-orchestrator
 设计/执行/分析/审计 <EXP-ID 或研究问题>。
 ```
 
-`codex-workflow` 保持领域无关：具体项目里的模型、数据集、reward、action space、安全阈值、GPU 约束，应放到目标项目自己的 project skill，而不是写进这个仓库。
+## CI / 验证
 
-## GitHub-first 的实际用法
+```bash
+bash -n scripts/install.sh
+bash -n scripts/update.sh
+bash -n tests/test-install.sh
+bash tests/test-install.sh
+```
 
-### 开发规划
+测试覆盖：
 
-1. push 到明确 branch/commit；
-2. ChatGPT/web 使用 [`prompts/github-analyze.md`](prompts/github-analyze.md)；
-3. 输出 `Execution Packet v1`；
-4. 本地 Codex 使用 [`prompts/codex-execute.md`](prompts/codex-execute.md)；
-5. Codex 检查 commit drift 后执行。
+- core / ml-research fresh install；
+- install idempotency；
+- project-owned config / AGENTS 内容保留；
+- managed divergence 拦截；
+- explicit `--force-managed`；
+- obsolete managed file 安全删除；
+- core -> ml-research promotion；
+- downgrade refusal；
+- legacy lock v1 -> v2 migration。
 
-Execution Packet 规范：
-
-`.agents/skills/dev-orchestrator/references/execution-packet.md`
-
-### 研究审计
-
-正式 EXP/stage push 后，ChatGPT/web 使用：
-
-[`prompts/github-research-audit.md`](prompts/github-research-audit.md)
-
-网页端应独立检查：
-
-`contract -> baseline/treatment -> result -> training health -> bad cases -> decision -> claim`
-
-如果审计发现需要改代码，再生成一个窄的 implementation follow-up 交给 `dev-orchestrator`，不要让网页端与本地 Codex 同时重做整个实现。
-
-## 为什么这样更省额度和 GPU
-
-软件侧主要消除：
-
-1. 高价模型扫仓库；
-2. 高价模型做机械实现；
-3. GitHub/web 与本地重复分析；
-4. 无限 debug/review 循环。
-
-ML 研究侧额外消除：
-
-1. reward/metric 还没验证就直接跑 full training；
-2. smoke 已经暴露结构问题仍继续烧 GPU；
-3. 指标差就同时调多个变量；
-4. 失败实验没有 taxonomy，下一次只能猜；
-5. 项目结束后再靠记忆补实验故事和面试材料。
-
-## 文件结构
+## 目录
 
 ```text
 AGENTS.md
+VERSION
 .codex/
   config.toml
   agents/
-    explorer.toml
-    worker.toml
-    planner.toml
-    reviewer.toml
-    expert.toml
 .agents/
   skills/
     dev-orchestrator/
-      SKILL.md
-      references/
-        execution-packet.md
     ml-research-orchestrator/
-      SKILL.md
-      references/
-        experiment-contract.md
-        experiment-lifecycle.md
-        reporting-protocol.md
-        research-debug-packet.md
-        claim-evidence.md
-        interview-report.md
+policies/
+  ml-research-agent-policy.md
 prompts/
   github-analyze.md
   github-research-audit.md
@@ -255,19 +294,27 @@ prompts/
 docs/
   architecture.md
   ml-research-workflow.md
+  versioning-and-upgrades.md
 scripts/
   install.sh
+  update.sh
+tests/
+  test-install.sh
+.github/
+  workflows/
+    ci.yml
 ```
 
-## Skill、Agent、Plugin 的边界
+## Skill / Agent / Project 的边界
 
-- **Custom Agent**：决定“谁做”，绑定模型、reasoning、sandbox 和角色职责；
-- **Skill**：决定“怎么做”，承载风险/实验生命周期、handoff、retry、review、completion gate；
-- **AGENTS.md**：只放项目长期政策，保持短小；
-- **Project Skill**：目标项目自己的模型/数据/reward/metrics/hardware invariants；
-- **Plugin**：当前不是必需。工作流稳定且需要跨团队/产品分发时再考虑。
+- **Custom Agent**：决定“谁做”。
+- **Skill**：决定“怎么做”。
+- **AGENTS.md**：短、稳定的仓库级 policy/navigation。
+- **Project Skill**：目标项目自己的领域/方法/硬约束。
+- **codex-workflow**：只保存跨项目通用 workflow，不保存 Medical/SQL/VLM 等项目专属语义。
 
 ## 设计文档
 
-- 通用开发编排：[`docs/architecture.md`](docs/architecture.md)
-- ML Research 编排：[`docs/ml-research-workflow.md`](docs/ml-research-workflow.md)
+- 开发编排：[`docs/architecture.md`](docs/architecture.md)
+- ML Research：[`docs/ml-research-workflow.md`](docs/ml-research-workflow.md)
+- 下游版本与升级：[`docs/versioning-and-upgrades.md`](docs/versioning-and-upgrades.md)
