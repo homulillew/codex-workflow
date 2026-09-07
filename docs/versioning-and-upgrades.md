@@ -32,7 +32,7 @@ Lock format v2 records the upstream identity:
 ```yaml
 lock_version: 2
 workflow_repository: "https://github.com/example/codex-workflow.git"
-workflow_version: "0.3.0"
+workflow_version: "0.4.0"
 workflow_commit: "<exact-commit>"
 profile: "ml-research"
 source_dirty: false

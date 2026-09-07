@@ -1,6 +1,6 @@
 ---
 name: ml-research-orchestrator
-description: Evidence-first orchestration for formal ML experiments. Use when designing, running, debugging, analyzing, or auditing training/evaluation experiments whose results may support technical conclusions, reports, or resume/interview claims. Pair with dev-orchestrator for non-trivial code changes. Do not use for tiny exploratory commands that will not support a claim.
+description: Evidence-first orchestration for formal ML experiments. Use when designing, running, debugging, analyzing, or auditing training/evaluation experiments whose results may support technical conclusions, reports, or resume/interview claims. Pair with dev-orchestrator for non-trivial code changes. Route stronger reasoning by conceptual complexity, not by consequence alone.
 ---
 
 # ML Research Orchestrator
@@ -10,6 +10,12 @@ The goal is not merely to make training run. The goal is to produce a reproducib
 
 This skill owns experiment semantics, promotion gates, analysis, and research artifacts.
 It does **not** replace `dev-orchestrator`: whenever a non-trivial code/config/refactor/debug task is required, hand that bounded implementation task to `dev-orchestrator`, then resume the research lifecycle after deterministic validation.
+
+The central routing rule is:
+
+> **Research consequence controls safeguards and evidence requirements. Reasoning complexity controls model strength.**
+
+A safety-sensitive experiment can be conceptually simple. A harmless offline experiment can require frontier-level algorithmic reasoning. Do not conflate the two.
 
 ## Core principles
 
@@ -22,7 +28,8 @@ It does **not** replace `dev-orchestrator`: whenever a non-trivial code/config/r
 7. **Separate observation from interpretation.** Reports must distinguish measured facts, hypotheses, and unsupported speculation.
 8. **No claim without provenance.** Resume/interview/report claims must resolve to exact experiments, commits, configs, metrics, and caveats.
 9. **Do not optimize only the headline metric.** Track guardrails that can reveal degenerate policies, leakage, over-refusal, length inflation, or other reward hacking.
-10. **Stop when evidence is sufficient.** Do not keep running variants after the registered question is answered with adequate confidence.
+10. **Use the strongest model only for the hardest reasoning bottleneck.** Do not spend GPT-6 on routine experiment execution/reporting.
+11. **Stop when evidence is sufficient.** Do not keep running variants after the registered question is answered with adequate confidence.
 
 ## Modes
 
@@ -57,9 +64,9 @@ Before every formal experiment or audit:
 
 If an experiment was planned against a different commit, detect drift before execution. Repair the contract or code deliberately; never silently run a stale plan.
 
-## Step 1 — classify the work
+## Step 1 — classify research status and reasoning complexity
 
-Classify the requested work as one of:
+First classify the work as:
 
 ### Exploratory
 Cheap investigation that will not directly support a public/project claim.
@@ -71,16 +78,37 @@ Requires a frozen Experiment Contract and lifecycle gates.
 
 ### Claim-bearing
 A registered experiment intended to support a report, resume bullet, benchmark statement, design decision, or interview claim.
-Requires full provenance, reviewer/audit pass, bad-case analysis, and claim ledger linkage.
+Requires full provenance, reviewer/audit pass, bad-case analysis, and claim-ledger linkage.
 
-When uncertain, treat an experiment as Registered. If the user later wants to cite it, upgrade it to Claim-bearing and complete the missing gates rather than retroactively inventing evidence.
+Then classify the **reasoning complexity** of the current bottleneck:
+
+### C0 — mechanical
+Metadata, deterministic transforms, report formatting, obvious experiment plumbing.
+
+### C1 — standard
+Known SFT/RL/evaluation patterns, ordinary config changes, routine analysis with clear interpretation.
+
+### C2 — complex
+Non-trivial experiment design, multi-factor diagnosis, substantial systems/method trade-offs, or difficult but conventional research analysis that a senior planner/reviewer can resolve.
+
+### C3 — expert / frontier
+The remaining question requires genuinely difficult non-routine reasoning. Typical examples:
+- novel algorithm, reward/objective, verifier, training protocol, or evaluation-method design;
+- methodology-critical choices where several plausible definitions would change the validity of later experiments;
+- difficult training/root-cause diagnosis with multiple evidence-backed competing hypotheses;
+- causal interpretation when headline and guardrail metrics conflict and ordinary analysis cannot resolve the claim;
+- deep synthesis across data, algorithm, optimization dynamics, systems constraints, and evaluation;
+- a high-leverage conceptual choice where a wrong answer would invalidate or waste a substantial experiment sequence.
+
+C3 may justify `expert` immediately after evidence is compressed. Do not make Sol fail artificially first.
+
+Conversely, claim-bearing or safety-sensitive work does **not** automatically require GPT-6 if the reasoning is C0-C2; strengthen evidence, review, and safeguards instead.
 
 ## Step 2 — freeze the Experiment Contract
 
 For Registered/Claim-bearing work, create the contract **before pilot/full compute** using `references/experiment-contract.md`.
 
 At minimum freeze:
-
 - research question;
 - falsifiable hypothesis;
 - baseline/parent experiment;
@@ -96,14 +124,38 @@ At minimum freeze:
 - known confounders/leakage risks.
 
 Do not phrase success as "metric improves" without a threshold or comparison rule when one can reasonably be specified.
-Do not choose a new primary metric after seeing the results. Post-hoc analyses are allowed but must be labeled post-hoc.
+Do not choose a new primary metric after seeing results. Post-hoc analyses are allowed but must be labeled post-hoc.
 
-## Step 3 — preflight before GPU training
+If the experiment design itself is C3, gather targeted literature/project evidence, let `planner` enumerate viable formulations and constraints, then ask `expert` to resolve the narrow methodological/algorithmic bottleneck **before** implementation and compute.
+
+## Step 3 — expert reasoning protocol for C3 research problems
+
+Do not use `expert` for routine hyperparameter selection, standard benchmark reporting, ordinary bad-case taxonomy, log summarization, or mechanical code review.
+
+For a C3 problem, prepare a compact **Research Decision Packet** containing:
+- exact question/decision;
+- current research objective and constraints;
+- established facts from repository evidence/literature/experiments;
+- viable algorithms/options or competing hypotheses;
+- evidence for and against each option/hypothesis;
+- what has already been ruled out;
+- downstream consequences of choosing incorrectly;
+- the precise output required from `expert`.
+
+Strong expert outputs should provide:
+- the recommended algorithm/method/interpretation or most likely root cause;
+- the underlying reasoning and decisive assumptions;
+- alternatives and failure modes;
+- the cheapest discriminating experiment or falsification test;
+- acceptance criteria for the next implementation/experiment.
+
+The expert resolves the **hard reasoning bottleneck**; cheaper roles still implement, execute, collect evidence, and write routine reports.
+
+## Step 4 — preflight before GPU training
 
 Before expensive execution, validate the experiment offline.
 
 Required when relevant:
-
 - schema and sample validation;
 - train/eval leakage and duplicate checks;
 - label/action/reward distribution inspection;
@@ -118,17 +170,15 @@ Required when relevant:
 
 A failed preflight blocks promotion. Fix the implementation through `dev-orchestrator`, record the defect if material, then rerun only affected checks.
 
-## Step 4 — promote compute gradually
+## Step 5 — promote compute gradually
 
-Use the lifecycle in `references/experiment-lifecycle.md`.
-Default progression:
+Use the lifecycle in `references/experiment-lifecycle.md`:
 
 `L0 unit -> L1 offline sample -> L2 smoke -> L3 pilot -> L4 full -> L5 analysis/audit`
 
 Never skip directly to full training merely because the code imports or a previous project used similar settings.
 
 At each promotion gate check:
-
 - correctness/invariants;
 - memory/runtime feasibility;
 - training health;
@@ -138,7 +188,7 @@ At each promotion gate check:
 
 If a lower tier reveals a structural failure, stop and diagnose instead of spending more compute.
 
-## Step 5 — execute reproducibly
+## Step 6 — execute reproducibly
 
 Every formal run must preserve enough metadata to reconstruct what happened.
 Prefer a project convention similar to:
@@ -157,7 +207,6 @@ experiments/EXP-XXX/
 ```
 
 Store or reference:
-
 - experiment ID;
 - git commit;
 - dirty-tree state;
@@ -173,10 +222,9 @@ Store or reference:
 
 Do not commit large checkpoints or raw logs solely for provenance when metadata, hashes, summaries, and external artifact references suffice.
 
-## Step 6 — monitor training health, not only final metrics
+## Step 7 — monitor training health, not only final metrics
 
 During/after training inspect signals appropriate to the algorithm. Examples include:
-
 - train/eval loss;
 - reward mean/std and reward-component distributions;
 - KL / entropy;
@@ -190,15 +238,16 @@ During/after training inspect signals appropriate to the algorithm. Examples inc
 
 Segment the timeline when behavior changes materially. Record **what changed first**, not merely correlated symptoms observed later.
 
-If training degenerates, do not immediately tune several hyperparameters. Create a Research Debug Packet after at most two meaningful attempts at the same unresolved root cause.
+If training degenerates, do not immediately tune several hyperparameters. Create a Research Debug Packet after at most two meaningful attempts at the same unresolved ordinary root cause.
 
-## Step 7 — analyze bad cases systematically
+If evidence already shows the diagnosis is C3 — for example several plausible hypotheses remain and choosing among them requires deep synthesis — escalate the compressed Research Debug Packet to `expert` without performing arbitrary extra retries.
+
+## Step 8 — analyze bad cases systematically
 
 A formal experiment is not complete with aggregate metrics alone.
 Use `references/reporting-protocol.md` and produce a bad-case taxonomy.
 
 For each material failure cluster capture:
-
 - count/rate and sampling method;
 - representative cases;
 - model state/input/output;
@@ -211,10 +260,11 @@ For each material failure cluster capture:
 Prefer cluster-level explanations over anecdotal cherry-picking.
 Explicitly look for degenerate strategies that improve the headline metric while harming a guardrail metric.
 
-## Step 8 — make an evidence-bounded decision
+Bad-case classification itself is usually C1/C2. Use `expert` only if the **interpretation/root cause** becomes C3.
+
+## Step 9 — make an evidence-bounded decision
 
 Every Registered/Claim-bearing experiment ends with one decision state:
-
 - `ACCEPT` — evidence supports the registered hypothesis within stated scope;
 - `REJECT` — evidence contradicts the registered hypothesis;
 - `INCONCLUSIVE` — evidence is insufficient/ambiguous/confounded;
@@ -223,7 +273,6 @@ Every Registered/Claim-bearing experiment ends with one decision state:
 `FOLLOW_UP` is not permission to mutate the same experiment in place. Create a new experiment ID/contract.
 
 A decision must cite:
-
 - baseline and treatment;
 - primary and guardrail metrics;
 - uncertainty/variance when available;
@@ -233,7 +282,9 @@ A decision must cite:
 
 Never upgrade `INCONCLUSIVE` to `ACCEPT` because one secondary metric moved favorably.
 
-## Step 9 — link claims to evidence
+If the evidence-to-conclusion mapping itself is C3 — e.g. competing causal explanations remain or a methodology-critical claim depends on conflicting evidence — use `expert` for the narrow interpretation question. Do not use GPT-6 merely because the claim is important.
+
+## Step 10 — link claims to evidence
 
 For Claim-bearing work, update the repository claim ledger using `references/claim-evidence.md`.
 
@@ -244,13 +295,12 @@ Each claim must resolve to:
 Claims must not contain fabricated precision, undocumented comparisons, or metrics from incompatible eval versions.
 If a comparison depends on a closed/external model, record the model/version/date/settings and the limitations of reproducibility.
 
-## Step 10 — extract interview evidence
+## Step 11 — extract interview evidence
 
 After a meaningful stage, update the interview report using `references/interview-report.md`.
 Do not create generic textbook notes detached from the project.
 
 Interview evidence should distinguish:
-
 - theory;
 - what this repository actually implemented;
 - what was observed;
@@ -259,80 +309,4 @@ Interview evidence should distinguish:
 - limitations;
 - evidence-backed project story.
 
-The most valuable material is often **why an approach failed and how the evidence changed the next decision**.
-
-## Research debugging budget
-
-For the same unresolved research failure:
-
-1. permit at most two meaningful implementation/config attempts;
-2. stop blind retries;
-3. create `Research Debug Packet v1`;
-4. ask `reviewer` to diagnose the evidence;
-5. use `expert` only for a narrow genuinely hard unresolved decision;
-6. turn the accepted diagnosis into a new registered experiment if it changes research semantics.
-
-Examples of blind retry to avoid:
-
-- changing learning rate, reward weights, batch size, prompt, and dataset together;
-- rerunning a failed full job without identifying whether failure is code, infra, data, or optimization;
-- changing metric thresholds after seeing undesirable results;
-- sampling only favorable outputs for bad-case reports.
-
-## Completion gates
-
-### Implementation complete
-Means code/config change is implemented and deterministic checks pass.
-It does **not** mean the research stage is complete.
-
-### Experiment complete
-Requires:
-
-- frozen contract;
-- required lifecycle gates passed or documented failure;
-- exact run provenance;
-- result artifact;
-- run report;
-- training report when training occurred;
-- bad-case report when behavior/output quality is part of the question;
-- decision record.
-
-### Claim complete
-Additionally requires:
-
-- independent audit/reviewer pass proportional to claim importance;
-- claim ledger entry;
-- caveats/limitations;
-- compatible baseline/eval definitions;
-- interview evidence updated if the claim is resume/interview relevant.
-
-Do not announce a stage as complete if only the code or training command completed.
-
-## Interaction with `dev-orchestrator`
-
-Use this rule:
-
-- **Research semantics** (question, hypothesis, baseline, metrics, experiment ID, promotion, interpretation) -> `ml-research-orchestrator`.
-- **Software change** (data pipeline, trainer integration, parser, metric implementation, refactor, bug fix) -> bounded task through `dev-orchestrator`.
-- **Return to research mode** after deterministic implementation validation to run the next lifecycle gate.
-
-Avoid having both skills independently re-plan the whole repository. The research orchestrator should hand the development orchestrator a compact implementation task with acceptance criteria, then consume the validated result.
-
-## Context and quota discipline
-
-Escalation should compress context:
-
-`raw logs/samples -> structured metrics/taxonomy -> Research Debug/Decision Packet -> reviewer/expert`
-
-Do not send huge raw logs to high-cost agents when a reproducible slice, exact step range, metric table, and representative failures are enough.
-
-## Stop rule
-
-Stop spending compute/model quota when:
-
-- the registered question is answered sufficiently for its intended use;
-- required guardrails show no unresolved material regression;
-- reports/decision/provenance are complete;
-- no new high-value hypothesis remains that would change the project decision.
-
-A clean negative result with strong evidence is a successful research outcome.
+Routine interview synthesis should not consume `expert`. Reserve GPT-6 for genuinely C3 technical questions whose answer materially affects the method, diagnosis, or defensible conclusion.

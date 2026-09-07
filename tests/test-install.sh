@@ -19,6 +19,12 @@ hash_file() {
   fi
 }
 
+# Upstream routing semantics should encode Risk x Complexity, with expert triggered by C3 reasoning.
+grep -Fq 'reasoning complexity (C3)' "$ROOT/.codex/agents/expert.toml"
+grep -Fq 'High consequence alone is not an expert trigger' "$ROOT/.codex/agents/planner.toml"
+grep -Fq 'Risk/consequence controls validation intensity. Reasoning complexity controls model strength.' "$ROOT/.agents/skills/dev-orchestrator/SKILL.md"
+grep -Fq 'C3 may justify `expert` immediately' "$ROOT/.agents/skills/ml-research-orchestrator/SKILL.md"
+
 # Fresh core install.
 bash "$ROOT/scripts/install.sh" "$CORE"
 
@@ -30,8 +36,11 @@ test -f "$CORE/.codex/config.toml"
 test -f "$CORE/.codex/codex-workflow.config.example.toml"
 grep -Fq 'lock_version: 2' "$CORE/.codex-workflow.lock"
 grep -Fq 'profile: "core"' "$CORE/.codex-workflow.lock"
+grep -Fq 'workflow_version: "0.4.0"' "$CORE/.codex-workflow.lock"
 grep -Fq '.agents/skills/dev-orchestrator/SKILL.md' "$CORE/.codex-workflow.manifest"
 grep -Fq '<!-- codex-workflow:start -->' "$CORE/AGENTS.md"
+grep -Fq 'C3 reasoning bottlenecks' "$CORE/AGENTS.md"
+grep -Fq 'reasoning complexity (C3)' "$CORE/.codex/agents/expert.toml"
 
 # Fresh research install.
 bash "$ROOT/scripts/install.sh" "$RESEARCH" --profile ml-research
@@ -41,6 +50,8 @@ test -f "$RESEARCH/.agents/skills/ml-research-orchestrator/SKILL.md"
 test -f "$RESEARCH/.agents/skills/ml-research-orchestrator/references/experiment-contract.md"
 grep -Fq 'profile: "ml-research"' "$RESEARCH/.codex-workflow.lock"
 grep -Fq '<!-- codex-workflow:ml-research:start -->' "$RESEARCH/AGENTS.md"
+grep -Fq 'C3 research reasoning' "$RESEARCH/AGENTS.md"
+grep -Fq 'C3 may justify `expert` immediately' "$RESEARCH/.agents/skills/ml-research-orchestrator/SKILL.md"
 
 # Re-running install is idempotent and explicitly asks callers to use upgrade.
 INSTALL_AGAIN="$(bash "$ROOT/scripts/install.sh" "$RESEARCH" --profile ml-research)"
@@ -117,4 +128,4 @@ test -f "$LEGACY/.codex-workflow.manifest"
 grep -Fq 'lock_version: 2' "$LEGACY/.codex-workflow.lock"
 grep -Fq 'profile: "ml-research"' "$LEGACY/.codex-workflow.lock"
 
-echo 'install/upgrade tests: PASS'
+echo 'install/upgrade + routing semantics tests: PASS'
