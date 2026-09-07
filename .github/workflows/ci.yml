@@ -11,11 +11,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate shell syntax
         run: |
           bash -n scripts/install.sh
+          bash -n scripts/update.sh
           bash -n tests/test-install.sh
 
-      - name: Test installer profiles
+      - name: Test install and upgrade lifecycle
         run: bash tests/test-install.sh
